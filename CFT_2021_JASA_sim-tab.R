@@ -1,19 +1,20 @@
 # Replication: simulation
-# Cattaneo, Feng and Rocio (2020)
+# Cattaneo, Feng and Titiunik (2021)
 # Notes: this file is only used to reproduce tables in the paper
-# Date: Feb 6, 2021
+# Date: Aug 7, 2021
 
 library(Hmisc)
 setwd("~/Dropbox/SC/simulation/")
-source("SuppFuns.R")
+source("CFT_2021_JASA_sim.R")
 
 
 ####################################
-table <- NULL
 rej.ind <- 1:7
+for (no in 1:4) {
+table <- NULL
 
 # Four tables: num=1:3, 4:6, 7:9, 10:12
-for (num in 1:3) {
+for (num in (3*no-2):(3*no)) {
 
 ### conditional ####################
 output <- as.matrix(read.table(paste("rawoutput/rawoutput_cond_dgp", num, "txt", sep="."), sep = ","))
@@ -53,8 +54,25 @@ cgroup   <- c("M1", "M1-S", "M2", "M3", "PERM", "CONF")
 n.rgroup <- rep(6, 3)
 rgroup   <- c("$\\rho=0$", "$\\rho=0.5$", "$\\rho=1$")
 rowname  <- rep(c("Cond. 1", "2", "3", "4", "5", "Uncond."), 3)
-latex(table[,-c(1,2)], file=paste("Table_Main", num/3, ".txt", sep = ""), rowlabel.just="r",  
+latex(table[,-c(1,2)], file=paste("Table_Main", no, ".txt", sep = ""), rowlabel.just="r",  
       append=FALSE, table.env=FALSE, center="none", title="",
       n.cgroup=n.cgroup, cgroup=cgroup, colheads=colheads,
       n.rgroup=n.rgroup, rgroup=rgroup, rowname=rowname
 )
+
+if (no==1|no==2) {
+  n.cgroup <- rep(2, 5)
+  colheads <- rep(c("CP", "AL"), 5)
+  cgroup   <- c("M1", "M1-S", "M2", "M3", "CONF")
+  
+  n.rgroup <- rep(6, 3)
+  rgroup   <- c("$\\rho=0$", "$\\rho=0.5$", "$\\rho=1$")
+  rowname  <- rep(c("Cond. 1", "2", "3", "4", "5", "Uncond."), 3)
+  latex(table[,-c(1,2,11,12)], file=paste("shortTable_Main", no, ".txt", sep = ""), rowlabel.just="r",  
+        append=FALSE, table.env=FALSE, center="none", title="",
+        n.cgroup=n.cgroup, cgroup=cgroup, colheads=colheads,
+        n.rgroup=n.rgroup, rgroup=rgroup, rowname=rowname
+  )
+}
+
+}

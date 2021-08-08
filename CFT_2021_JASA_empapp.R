@@ -1,7 +1,7 @@
 # Replication file: empirical illustration
-# Cattaneo, Feng and Rocio (2021)
+# Cattaneo, Feng and Titiunik (2021)
 # Notes: replication needs to load supporting functions first
-# Date: Feb 6, 2021
+# Date: Aug 7, 2021
 
 rm(list=ls())
 library(ggplot2)
@@ -10,7 +10,7 @@ library(Qtools)
 library(latex2exp)
 library(Hmisc)
 #setwd("~/Dropbox/SC/Empirical_Illustration/")
-source("SuppFuns_emp.R")
+source("CFT_2021_JASA_empapp-fun.R")
 set.seed(1234)
 
 ##############################

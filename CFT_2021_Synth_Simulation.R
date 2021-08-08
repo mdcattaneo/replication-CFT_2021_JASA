@@ -1,6 +1,6 @@
 # Replication: simulation
-# Cattaneo, Feng and Rocio (2020)
-# Date: Feb 6, 2021
+# Cattaneo, Feng and Titiunik (2021)
+# Date: Aug 7, 2021
 
 rm(list = ls())
 #setwd("~/Dropbox/SC/simulation/")
@@ -12,11 +12,11 @@ library(foreach)
 library(doParallel)
 library(doRNG)
 library(matrixStats)
-source("SuppFuns_simul.R")
+source("CFT_2021_JASA_sim.R")
 
 ##########################################3
 # pars
-rep   <- 2000
+rep   <- 5000
 T0    <- 100
 J     <- 10
 M     <- 400 
@@ -25,8 +25,12 @@ lb    <- 0
 alpha <- 0.10
 w0.u  <- c(0.3, 0.4, 0.3, rep(0, J-3))
 rho.max <- 1
+vce <- "HC0"
 
-par <- read.csv("SimulModel.csv", header = T, colClasses=c(rep("numeric", 2), "logical", "numeric"))
+par <- read.csv("CFT_2021_JASA_sim-models.csv", header = T, colClasses=c(rep("numeric", 2), "logical", "numeric"))
+
+# num in 1:12 (12 cases in total)
+
 num <- 1  # no. of dgp
 model <- par$model[num]
 err   <- par$err[num]
@@ -97,7 +101,7 @@ output <- foreach (i = 1:rep, .options.RNG=12345, .packages=c('tsDyn','optiSolve
                      #output <- rbind(data$y.tr.0, data$y.tr.1)
                      output <- sc.sim.cond(i, y.co.0=y.co.0, y.co.1=y.co.eval, 
                                            T0, J, model, err, eq, lb, method.u="all", alpha, M,
-                                           w0.u, w0.c, u.order, rho.max=rho.max) 
+                                           w0.u, w0.c, u.order, rho.max=rho.max, vce=vce) 
                      output   # (5*rep) by length(Kseq) matrix
                    }
 
@@ -135,7 +139,7 @@ output <- foreach (i = 1:rep, .options.RNG=12345, .packages=c('tsDyn','optiSolve
                      
                      output <- sc.sim.unc(i, x.list=X.ls, 
                                           T0, J, model, err, eq, lb, method.u="all", alpha, M,
-                                          w0.u, w0.c.ls=w0.c, u.order=u.order, rho.max=rho.max) 
+                                          w0.u, w0.c.ls=w0.c, u.order=u.order, rho.max=rho.max, vce=vce) 
                      output   # (5*rep) by length(Kseq) matrix
                    }
 

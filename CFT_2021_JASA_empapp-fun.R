@@ -1,12 +1,12 @@
 # Replication file: empirical illustration
-# Cattaneo, Feng and Rocio (2020)
+# Cattaneo, Feng and Titiunik (2021)
 # Supporting functions
-# Notes: this file contains a subset of functions defined for simulation purpose
-# Date: Feb 5, 2021
+# Notes: this file contains a subset of functions defined for simulation purpose (with several small changes)
+# Date: Aug 7, 2021
 
 
 # SC estimation (always J units + covariates); x.T can be a matrix, neval * (d.B+d.C)
-sc.est <- function(A, B, C=NULL, x.T, eq=1, lb=0) {
+sc.est <- function(A, B, C=NULL, x.T, eq=1, lb=0, ini=0) {
   Z <- cbind(B, C)
   d.B <- ncol(B)
   d.C <- 0
@@ -17,18 +17,21 @@ sc.est <- function(A, B, C=NULL, x.T, eq=1, lb=0) {
   # define a quad objective fn
   obj <- quadfun(Q=Gram, a=a)
   
-  # constraint
-  roweq   <- c(rep(1, d.B), rep(0, d.C))
-  rowineq <- cbind(diag(d.B), matrix(0, d.B, d.C))
-  Mat.cst <- rbind(roweq, rowineq)
-  lc      <- lincon(A=Mat.cst, dir=c("==", rep(">=", d.B)), 
-                    val=c(eq, rep(lb, d.B)), name=1:nrow(Mat.cst))
+  # Lower bound on w
+  lb.opt  <- lbcon(val = c(rep(lb, d.B), rep(-Inf, d.C)),
+                   id = c(1:(d.B+d.C)))
+  
+  # Constraint on the norm of w
+  roweq       <- t(c(rep(1, d.B), rep(0, d.C)))
+  norm.constr <- lincon(A = roweq, dir = c("=="), val = c(eq), name = "Norm-1")
   
   # define optimization; min
-  co <- cop(f=obj, max=F, lc=lc)
+  co <- cop(f=obj, max=F, lc=norm.constr, lb=lb.opt)
   
   # optimization
-  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T))
+  x0        <- rep(ini, (d.B+d.C))
+  names(x0) <- co$id
+  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T, X = x0))
   
   w      <- result$x
   fit.pr <- Z %*% w  
@@ -40,7 +43,8 @@ sc.est <- function(A, B, C=NULL, x.T, eq=1, lb=0) {
 
 
 # SC prediction intervals
-sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, u.order=1, constant=F, rho.max=1) {
+sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, u.order=1, 
+                  constant=F, rho.max=1, ini=0, vce="HC0") {
   if (is.vector(x.T)) {
     x.T <- t(x.T)
   }
@@ -66,18 +70,26 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
   # inference
   # truncate
   Z <- cbind(B, C.full)
+  ind.B <- w[1:d.B] > 0.01
+  B2 <- B[,ind.B,drop=F]*B[,ind.B,drop=F]
   if (model==3) {
     # cointegration
-    rho <- sqrt(mean((res-mean(res))^2))*log(T0)/T0/(min(apply(Z[,1:d.B], 2, sd))/sqrt(T0))
+    #rho <- sqrt(mean((res-mean(res))^2))*log(T0)/T0 * sqrt(max(colSums(B2))/T0^2)/(min(colSums(B2))/T0^2)
+    rho <- sqrt(mean((res-mean(res))^2))*log(T0)/T0 /sqrt(min(colSums(B2))/T0^2)
+    #rho <- sqrt(mean((res-mean(res))^2))*log(T0)/T0/(min(apply(Z[,1:d.B], 2, sd))/sqrt(T0))
   } else if (model==1) {
     # iid
-    rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0)/min(apply(Z[,1:d.B], 2, sd))
+    #rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0) * sqrt(max(colSums(B2)/T0))/(min(colSums(B2)/T0))
+    rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0) /sqrt(min(colSums(B*B)/T0))
+    #rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0)/min(apply(Z[,1:d.B], 2, sd))
   } else if (model==2) {
     # AR
-    rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0)/min(apply(Z[,1:d.B], 2, sd))
+    #rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0) * sqrt(max(colSums(B2)/T0))/(min(colSums(B2)/T0))
+    rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0) /sqrt(min(colSums(B*B)/T0))
+    #rho <- sqrt(mean((res-mean(res))^2)*log(T0)/T0)/min(apply(Z[,1:d.B], 2, sd))
   }
   # upper bound
-  #print(rho)
+  #print(rho); print(max(w))
   rho <- min(rho, rho.max)
   
   w.star[1:d.B][w.star[1:d.B] < rho] <- 0 
@@ -91,11 +103,10 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
   }
   
   # linear constraint
-  roweq   <- c(rep(1, d.B), rep(0, d.C))
-  rowineq <- cbind(diag(d.B), matrix(0, d.B, d.C))
-  Mat.cst <- rbind(roweq, rowineq)
-  lc  <- lincon(A=Mat.cst, dir=c("==", rep(">=", d.B)), 
-                val=c(sum(w.star), rep(lb, d.B)), name=1:nrow(Mat.cst))
+  # Constraint on the norm of w
+  roweq       <- t(c(rep(1, d.B), rep(0, d.C)))
+  norm.constr <- lincon(A = roweq, dir = c("=="), val = c(sum(w.star)), name = "Norm-1")
+  
   
   # variance estimate
   if (u.order==0) {
@@ -113,9 +124,9 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
       index.sub <- index
     }
     if (model==3) {
-      des.0 <- cbind(apply(B, 2, diff), C)[,index.sub,drop=F] 
-      des.1 <- cbind(sweep(x.T[,1:d.B,drop=F], 2, B[T0,]), 
-                     x.T[,-(1:d.B),drop=F])[,index.sub,drop=F]
+      x.diff <- apply(rbind(B, x.T[,1:d.B,drop=F]), 2, diff)
+      des.0  <- cbind(x.diff[1:(T0-1),,drop=F], C[1:(T0-1),,drop=F])[,index.sub,drop=F]
+      des.1  <- cbind(x.diff[-(1:(T0-1)),,drop=F], x.T[,-(1:d.B),drop=F])[,index.sub,drop=F]
     } else {
       des.0 <- cbind(B, C)[,index.sub, drop=F]
       des.1 <- x.T[,index.sub,drop=F]
@@ -139,7 +150,15 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
   }
   
   u.mean <- lm.fit(des.0, res)$fitted.values
-  Omega  <- diag(c((res-u.mean)^2))
+  
+  if (vce=="HC0") {
+    vce.weights <- 1
+  } else if (vce=="HC1") {
+    if (model==3) vce.weights <- (T0-1)/(T0-2-sum(w!=0))
+    else          vce.weights <- T0/(T0-1-sum(w!=0))
+  }
+  
+  Omega  <- diag(c((res-u.mean)^2)) * vce.weights
   
   if (model==3) { 
     Sigma  <- t(Z[-1,,drop=F]) %*% Omega %*% Z[-1,,drop=F] / ((T0-1)^2)
@@ -151,9 +170,14 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
   # obj fun
   obj.ls <- apply(x.T.full, 1, function(xt) linfun(a=xt, d=-sum(xt * w.star)))     # x *(w-w.star)
   
+  # Lower bound on w
+  lb.opt  <- lbcon(val = c(rep(lb, d.B), rep(-Inf, d.C)),
+                   id = c(1:(d.B+d.C)))
+  
   # simulate
   vsig <- matrix(unlist(sapply(obj.ls, function(obj) simulate.w(w.star=w.star, Q=Q, Sigma.root=Sigma.root,
-                                                                obj=obj, lc=lc, M=M, alpha=alpha/4))), 2)
+                                                                obj=obj, lc=norm.constr, lb.opt=lb.opt, M=M, alpha=alpha/4, ini=ini))), 2)
+
   lb.w <- vsig[1,]
   ub.w <- vsig[2,]
   
@@ -230,8 +254,8 @@ sc.pi <- function(A, B, C=NULL, x.T, eq=1, lb=0, method.u, alpha, M=200, model, 
 ## Ancillary functions ###
 ##########################
 # vectorized simulate fun for w
-simulate.w <- function(w.star, Q, Sigma.root, obj, lc, M, alpha) {
-  vsig <- sapply(1:M, function(i) sc.pi.w(i, w.star=w.star, Q=Q, Sigma.root=Sigma.root, obj=obj, lc=lc))
+simulate.w <- function(w.star, Q, Sigma.root, obj, lc, lb.opt, M, alpha, ini) {
+  vsig <- sapply(1:M, function(i) sc.pi.w(i, w.star=w.star, Q=Q, Sigma.root=Sigma.root, obj=obj, lc=lc, lb.opt=lb.opt, ini=ini))
   lb.w <- quantile(vsig[1,], alpha, na.rm=T)   # account for potential NaN's
   ub.w <- quantile(vsig[2,], 1-alpha, na.rm=T)
   
@@ -240,7 +264,7 @@ simulate.w <- function(w.star, Q, Sigma.root, obj, lc, M, alpha) {
 
 
 # PI for (w_hat-w)
-sc.pi.w <- function(i, w.star, Q, Sigma.root, obj, lc) {
+sc.pi.w <- function(i, w.star, Q, Sigma.root, obj, lc, lb.opt, ini) {
   zeta <- rnorm(length(w.star))
   G    <- Sigma.root %*% zeta
   
@@ -249,13 +273,16 @@ sc.pi.w <- function(i, w.star, Q, Sigma.root, obj, lc) {
                   d=2*sum(G*w.star) + sum(w.star*(Q %*% w.star)), val=0)
   
   # define optimization; min
-  co     <- cop(f=obj, max=F, lc=lc, qc=qcon)
-  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T))
+  co     <- cop(f=obj, max=F, lc=lc, qc=qcon, lb=lb.opt)
+  x0        <- rep(ini, length(w.star))
+  names(x0) <- co$id
+  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T, X=x0))
   ub     <- -validate(co, result, quiet=T)$obj.fun
   
   # define optimization; max
-  co     <- cop(f=obj, max=T, lc=lc, qc=qcon)
-  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T))
+  co     <- cop(f=obj, max=T, lc=lc, qc=qcon, lb=lb.opt)
+  names(x0) <- co$id
+  result <- suppressMessages(solvecop(co, solver="slsqp", quiet=T, X=x0))
   lb     <- -validate(co, result, quiet=T)$obj.fun
   
   return(c(lb, ub))
@@ -313,7 +340,7 @@ sc.pi.u <- function(res, x, eval, method="gaussian", alpha) {
     var.pred <- predict(y=log((res-res.fit)^2), x=x, eval=x.more, type="lm")
     u.sig2   <- exp(var.pred[1:neval])
     
-    eps <- 2*sqrt(-log(alpha)*2*u.sig2)    # double sigma
+    eps <- 1.5*sqrt(-log(alpha)*2*u.sig2)    # 1.5 sigma
     lb <- u.mean - eps
     ub <- u.mean + eps
   }
